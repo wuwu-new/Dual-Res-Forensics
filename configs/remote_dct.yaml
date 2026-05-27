@@ -1,0 +1,71 @@
+# ============================================================
+# 远端 DCT 实验配置
+#
+# 在 remote_tuned.yaml 基础上的结构性改进:
+#   1) +DCT 频域分支: 8x8 块 DCT → 轻量 CNN → 64 个 freq token
+#      与 CLIP token 拼接后一起喂给 GRCA 的 K/V (二路融合)
+#   2) +对比学习投影头 (proj_dim=64):
+#      之前 con loss 几乎不动 (4.00→3.97) 是因为 SupCon 直接拿 fused_feat
+#      与 BCE 抢梯度。加 MLP 投影头让对比损失在独立空间优化, 标准做法。
+#   3) num_epochs: 8 → 4    本来 Ep1 就最佳, 训长有害, 直接早停式短训
+#   4) 其余超参完全复用 remote_tuned (avg_AUC=0.7322 的配方)
+#
+# 预期: avg_AUC 0.75+ (相比 baseline 0.7230 提升 ≥ 2 个点)
+# ============================================================
+experiment:
+  name: drf_v2_remote_dct
+  log_dir: ./logs
+
+backbone:
+  clip_name: openai/clip-vit-base-patch32
+  freeze_clip: true
+
+residual:
+  c_token: 192
+  token_grid: 8
+  use_srm: true
+
+freq:
+  use_freq: true          # ★ 新增: 启用 DCT 频域分支
+  c_token: 192            # 与 residual c_token 对齐, 方便统一融合
+  token_grid: 8           # 64 个 freq token (与 residual/CLIP 数量级一致)
+
+fusion:
+  embed_dim: 256
+  num_heads: 8
+  fused_dim: 128
+  dropout: 0.1
+  use_gate: true
+
+model:
+  use_boundary_head: false
+  proj_dim: 64            # ★ 新增: 对比学习投影头输出维度 (0 = 关闭)
+
+data:
+  image_size: 224
+  batch_size: 64
+  num_workers: 4
+  augment_strength: 1.3
+  train_json: ./data/ffpp_c23_train.json
+  test_jsons:
+    cdfv2: ./data/cdfv2_test.json
+    dfdc:  ./data/dfdc_test.json
+
+loss:
+  label_smoothing: 0.05
+  contrastive_weight: 0.3
+  contrastive_temperature: 0.07
+  num_hard_neg: 32
+
+optim:
+  lr: 0.0002
+  weight_decay: 0.001
+  warmup_ratio: 0.05
+  min_lr_ratio: 0.01
+
+train:
+  num_epochs: 4           # ★ ↓ 8  Ep1 就最佳, 4 个 epoch 完全够看出方向
+  use_amp: true
+  grad_accum_steps: 1
+  grad_clip_norm: 1.0
+  ema_decay: 0.999

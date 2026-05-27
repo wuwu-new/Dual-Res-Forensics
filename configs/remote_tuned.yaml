@@ -1,0 +1,68 @@
+# ============================================================
+# 远端调优配置 (基于第一次 baseline 结果的针对性调整)
+#
+# 第一次结果观察:
+#   - Ep1 就达到 avg_AUC=0.7226, Ep5 巅峰 0.7230 → LR 偏大、收敛太快
+#   - DFDC AUC 从 0.636 → 0.613 → 过拟合 FF++, 跨域泛化变差
+#   - con loss 从 4.00 几乎不动 → 对比损失权重 / 温度都需要加强
+#
+# 本配置改动 (相对 remote.yaml):
+#   1) lr: 4e-4 → 2e-4          # 减半, 让训练更稳
+#   2) num_epochs: 15 → 8       # 本来 ep5 就过拟合, 训长无益
+#   3) contrastive_weight: 0.1 → 0.3   # 让对比损失真正参与
+#   4) contrastive_temperature: 0.1 → 0.07  # 更尖锐, 推动 embedding 分离
+#   5) num_hard_neg: 16 → 32    # batch=64 时多点难负例
+#   6) augment_strength: 1.0 → 1.3  # 更强增强对抗过拟合
+#   7) weight_decay: 5e-4 → 1e-3    # 更强正则
+# ============================================================
+experiment:
+  name: drf_v2_remote_tuned
+  log_dir: ./logs
+
+backbone:
+  clip_name: openai/clip-vit-base-patch32
+  freeze_clip: true
+
+residual:
+  c_token: 192
+  token_grid: 8
+  use_srm: true
+
+fusion:
+  embed_dim: 256
+  num_heads: 8
+  fused_dim: 128
+  dropout: 0.1
+  use_gate: true
+
+model:
+  use_boundary_head: false
+
+data:
+  image_size: 224
+  batch_size: 64
+  num_workers: 4
+  augment_strength: 1.3           # ↑ 1.0
+  train_json: ./data/ffpp_c23_train.json
+  test_jsons:
+    cdfv2: ./data/cdfv2_test.json
+    dfdc:  ./data/dfdc_test.json
+
+loss:
+  label_smoothing: 0.05
+  contrastive_weight: 0.3         # ↑ 0.1
+  contrastive_temperature: 0.07   # ↓ 0.1
+  num_hard_neg: 32                # ↑ 16
+
+optim:
+  lr: 0.0002                      # ↓ 0.0004
+  weight_decay: 0.001             # ↑ 0.0005
+  warmup_ratio: 0.05
+  min_lr_ratio: 0.01
+
+train:
+  num_epochs: 8                   # ↓ 15
+  use_amp: true
+  grad_accum_steps: 1
+  grad_clip_norm: 1.0
+  ema_decay: 0.999
