@@ -1,0 +1,54 @@
+# ============================================================
+# 消融实验: 关闭 SRM (残差通道直接用 RGB 输入到 DW 编码器)
+# 与 default.yaml 的唯一差异: experiment.name + residual.use_srm = false
+# ============================================================
+experiment:
+  name: drf_v2_ablation_no_srm
+  log_dir: ./logs
+
+backbone:
+  clip_name: openai/clip-vit-base-patch32
+  freeze_clip: true
+
+residual:
+  c_token: 192
+  token_grid: 8
+  use_srm: false                # ← 消融点
+
+fusion:
+  embed_dim: 256
+  num_heads: 8
+  fused_dim: 128
+  dropout: 0.1
+  use_gate: true
+
+model:
+  use_boundary_head: false
+
+data:
+  image_size: 224
+  batch_size: 16
+  num_workers: 4
+  augment_strength: 1.0
+  train_json: ./data/ffpp_c23_train.json
+  test_jsons:
+    cdfv2: ./data/celebdfv2_test.json
+
+loss:
+  label_smoothing: 0.05
+  contrastive_weight: 0.1
+  contrastive_temperature: 0.1
+  num_hard_neg: 16
+
+optim:
+  lr: 0.0002
+  weight_decay: 0.0005
+  warmup_ratio: 0.05
+  min_lr_ratio: 0.01
+
+train:
+  num_epochs: 10
+  use_amp: true
+  grad_accum_steps: 1
+  grad_clip_norm: 1.0
+  ema_decay: 0.999
