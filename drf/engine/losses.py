@@ -1,92 +1,132 @@
-"""
-损失函数
-==========
-- BinaryClsLoss     : BCEWithLogits + label smoothing (替换旧版 2-class CE)
-- HardNegSupConLoss : 难负例挖掘的样本级监督对比损失
-                      (相对旧版 SupCon: 每个 anchor 只保留 top-k 难负例,
-                       正例不变. 对 fake-fake 仍计入正对, 保持核心不变.)
+"""DRF v2 损失函数模块。
+
+包含:
+    - HardNegSupConLoss: 带难负例挖掘（top-k）的有监督对比损失
+    - BCESupConLoss:     BCEWithLogits + Hard-Neg SupCon 的联合损失
+
+设计动机
+--------
+Deepfake A/B 图像差异极小（FF++ 全局一致），普通 BCE 在难样本上梯度饱和。
+Hard-Negative SupCon 强制 anchor 只与「最难区分」的 top-k 负样本对比，
+把对比信号集中到决策边界附近的样本上，提升跨域 AUC。
 """
 
-from typing import Optional
+from __future__ import annotations
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 
-class BinaryClsLoss(nn.Module):
-    """logit (B,) + label (B,) ∈ {0,1} → BCEWithLogits with label smoothing."""
-
-    def __init__(self, label_smoothing: float = 0.05, pos_weight: Optional[float] = None):
-        super().__init__()
-        self.eps = float(label_smoothing)
-        self.pos_weight = (None if pos_weight is None
-                           else torch.tensor([float(pos_weight)]))
-
-    def forward(self, logit: torch.Tensor, label: torch.Tensor) -> torch.Tensor:
-        y = label.float()
-        if self.eps > 0:
-            y = y * (1.0 - self.eps) + 0.5 * self.eps          # 标签平滑
-        pw = (self.pos_weight.to(logit.device) if self.pos_weight is not None else None)
-        return F.binary_cross_entropy_with_logits(logit, y, pos_weight=pw)
-
-
 class HardNegSupConLoss(nn.Module):
-    """
-    Hard-Negative Supervised Contrastive Loss.
+    """带难负例挖掘的有监督对比损失（Supervised Contrastive Learning, NeurIPS'20 变体）。
 
-    feat (B, D), label (B,) → scalar loss
-    步骤:
-      1. L2 归一化 → 余弦相似度 / 温度
-      2. 屏蔽自身相似度
-      3. 正例: 同类 (去自身)
-      4. 负例: 异类中相似度 top-k 高的样本 (难负例),
-              其余负例位置在 logits 中置 -inf, 不参与 softmax
-      5. 标准 SupCon log-prob 平均
+    与原始 SupCon 的区别：分母不再聚合「全部负样本」，而是只保留每个 anchor
+    相似度最高（即最难区分）的 ``top_k`` 个负样本，使梯度集中在难例上。
+
+    Args:
+        temperature: 温度系数 τ，越小对难例越敏感。默认 0.3。
+        top_k:       每个 anchor 参与对比的难负例数量。默认 16。
+        base_temperature: 损失缩放基准，沿用原论文实现，默认与 temperature 一致。
     """
 
-    def __init__(self, temperature: float = 0.1, num_hard_neg: int = 16):
+    def __init__(
+        self,
+        temperature: float = 0.3,
+        top_k: int = 16,
+        base_temperature: float | None = None,
+    ) -> None:
         super().__init__()
-        self.tau = float(temperature)
-        self.k_neg = int(num_hard_neg)
+        if temperature <= 0:
+            raise ValueError("temperature 必须为正数")
+        self.temperature = temperature
+        self.top_k = top_k
+        self.base_temperature = base_temperature or temperature
 
-    def forward(self, feat: torch.Tensor, label: torch.Tensor) -> torch.Tensor:
-        B = feat.size(0)
-        if B < 2:
-            return feat.new_zeros(())
-        feat = F.normalize(feat, dim=1)
-        sim = feat @ feat.t() / self.tau                       # (B, B)
+    def forward(self, features: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        """计算损失。
 
-        eye = torch.eye(B, device=feat.device, dtype=torch.bool)
-        same = label.view(-1, 1).eq(label.view(1, -1))          # (B, B) bool
-        pos_mask = same & ~eye
-        neg_mask = ~same                                        # 异类
+        Args:
+            features: [B, D] 的特征向量（建议来自投影头，会在内部做 L2 归一化）。
+            labels:   [B] 的整型标签（0=真, 1=伪）。
 
-        # ----- 难负例挖掘: 每行仅保留 top-k 负例, 其余置 -inf -----
-        sim_for_neg = sim.masked_fill(~neg_mask, float("-inf"))
-        k = min(self.k_neg, max(int(neg_mask.sum(dim=1).max().item()), 1))
-        topk_vals, topk_idx = sim_for_neg.topk(k, dim=1)
-        hard_neg_mask = torch.zeros_like(sim, dtype=torch.bool)
-        hard_neg_mask.scatter_(1, topk_idx, True)
-        hard_neg_mask &= neg_mask                               # 防止 -inf 也被 scatter 进来
+        Returns:
+            标量损失。
+        """
+        if features.dim() != 2:
+            raise ValueError(f"features 期望 [B, D]，实际 {tuple(features.shape)}")
+        device = features.device
+        batch_size = features.size(0)
 
-        # ----- 构造 logits: 自身 -inf, 非 (正例 ∪ 难负例) 也 -inf -----
-        keep = pos_mask | hard_neg_mask
-        logits = sim.masked_fill(~keep, float("-inf"))
-        logits = logits.masked_fill(eye, float("-inf"))
+        features = F.normalize(features, dim=1)
+        labels = labels.contiguous().view(-1, 1)
 
-        # 没有正例的行跳过 (clamp 防除零)
-        log_prob = F.log_softmax(logits, dim=1)
-        # 关键: 一整行全 -inf (没有正例也没有难负例, 或者 batch 全单类) 时
-        # log_softmax 会得到 NaN, 与 mask 相乘后 0*NaN=NaN 污染整批 loss。
-        # 这里把 NaN/Inf 全部替换为 0, 再靠下面的 valid mask 把这些行剔除。
-        log_prob = torch.nan_to_num(log_prob, nan=0.0, posinf=0.0, neginf=0.0)
-        pos_log_prob = (pos_mask.float() * log_prob).sum(dim=1)
-        n_pos = pos_mask.float().sum(dim=1).clamp(min=1.0)
-        loss = -(pos_log_prob / n_pos)
+        # 相似度矩阵 [B, B]
+        sim = torch.matmul(features, features.t()) / self.temperature
+        # 数值稳定：减去每行最大值
+        sim = sim - sim.max(dim=1, keepdim=True)[0].detach()
 
-        # 完全没有正例的行 (pos_mask 全 0) 直接置 0, 不影响均值
-        valid = pos_mask.any(dim=1).float()
-        loss = loss * valid
-        denom = valid.sum().clamp(min=1.0)
-        return loss.sum() / denom
+        # 正样本掩码（同标签且非自身）
+        pos_mask = torch.eq(labels, labels.t()).float().to(device)
+        self_mask = torch.eye(batch_size, device=device)
+        pos_mask = pos_mask - self_mask                       # 去掉对角线
+        neg_mask = 1.0 - torch.eq(labels, labels.t()).float() # 异标签 = 负样本
+
+        # ---- 难负例挖掘：每行只保留相似度最高的 top_k 个负样本 ----
+        neg_sim = sim.masked_fill(neg_mask == 0, float("-inf"))
+        k = min(self.top_k, batch_size - 1)
+        # 取 top_k 难负例的列索引
+        _, hard_idx = neg_sim.topk(k, dim=1)
+        hard_neg_mask = torch.zeros_like(sim)
+        hard_neg_mask.scatter_(1, hard_idx, 1.0)
+        hard_neg_mask = hard_neg_mask * neg_mask              # 防止 -inf 行污染
+
+        # 分母 = 正样本 + 难负样本
+        logits_mask = pos_mask + hard_neg_mask
+        exp_sim = torch.exp(sim) * logits_mask
+        log_prob = sim - torch.log(exp_sim.sum(dim=1, keepdim=True) + 1e-12)
+
+        # 仅对「有正样本」的 anchor 求均值，避免除零
+        pos_count = pos_mask.sum(dim=1)
+        valid = pos_count > 0
+        if valid.sum() == 0:
+            return torch.zeros((), device=device)
+
+        mean_log_prob_pos = (pos_mask * log_prob).sum(dim=1)[valid] / pos_count[valid]
+        loss = -(self.temperature / self.base_temperature) * mean_log_prob_pos
+        return loss.mean()
+
+
+class BCESupConLoss(nn.Module):
+    """联合损失：BCEWithLogits（分类） + 加权 Hard-Neg SupCon（表征）。
+
+    total = bce + supcon_weight * supcon
+    """
+
+    def __init__(
+        self,
+        supcon_weight: float = 0.3,
+        temperature: float = 0.3,
+        top_k: int = 16,
+        label_smoothing: float = 0.05,
+    ) -> None:
+        super().__init__()
+        self.supcon_weight = supcon_weight
+        self.label_smoothing = label_smoothing
+        self.bce = nn.BCEWithLogitsLoss()
+        self.supcon = HardNegSupConLoss(temperature=temperature, top_k=top_k)
+
+    def forward(
+        self,
+        logits: torch.Tensor,
+        features: torch.Tensor,
+        labels: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        """返回包含各分项的字典，便于日志记录与消融。"""
+        target = labels.float()
+        if self.label_smoothing > 0:
+            target = target * (1 - self.label_smoothing) + 0.5 * self.label_smoothing
+        bce_loss = self.bce(logits.view(-1), target.view(-1))
+        supcon_loss = self.supcon(features, labels)
+        total = bce_loss + self.supcon_weight * supcon_loss
+        return {"loss": total, "bce": bce_loss, "supcon": supcon_loss}
