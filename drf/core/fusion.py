@@ -52,7 +52,7 @@ class _SDPAttention(nn.Module):
         b, n, _ = x.shape
         return x.view(b, n, self.h, self.dh).transpose(1, 2)
 
-    def forward(self, x_q, x_kv):
+    def forward(self, x_q, x_kv, return_attn: bool = False):
         q = self._split(self.q(x_q))
         k = self._split(self.k(x_kv))
         v = self._split(self.v(x_kv))
@@ -62,7 +62,8 @@ class _SDPAttention(nn.Module):
         out = attn @ v                                         # (B, h, Nq, dh)
         b, h, n, dh = out.shape
         out = out.transpose(1, 2).contiguous().view(b, n, h * dh)
-        return self.o(out)
+        out = self.o(out)
+        return (out, attn) if return_attn else out
 
 
 class _AttnPool(nn.Module):
@@ -155,6 +156,7 @@ class GatedResidualCrossAttention(nn.Module):
         adapter_tokens: torch.Tensor,
         clip_tokens: torch.Tensor,
         freq_tokens: torch.Tensor = None,
+        return_aux: bool = False,
     ):
         q = self.proj_q(adapter_tokens)            # (B, N_a, D)
         kv = self.proj_kv(clip_tokens)             # (B, N_c, D)
@@ -166,7 +168,13 @@ class GatedResidualCrossAttention(nn.Module):
             kv = torch.cat([kv, kv_f], dim=1)      # (B, N_c+N_f, D)
 
         # Pre-LN cross-attention + 残差
-        attn_out = self.cross(self.norm_q1(q), self.norm_kv1(kv))
+        cross_out = self.cross(
+            self.norm_q1(q), self.norm_kv1(kv), return_attn=return_aux
+        )
+        if return_aux:
+            attn_out, cross_attn = cross_out
+        else:
+            attn_out, cross_attn = cross_out, None
         x = q + attn_out
 
         # Pre-LN SwiGLU + 残差
@@ -181,4 +189,13 @@ class GatedResidualCrossAttention(nn.Module):
         else:
             fused = f_cross
 
-        return self.head(fused)                # (B, out_dim)
+        fused_out = self.head(fused)                # (B, out_dim)
+        if not return_aux:
+            return fused_out
+        aux = {
+            "cross_attention": cross_attn,
+            "gate": torch.sigmoid(self.gate).detach(),
+            "cross_feature": f_cross,
+            "residual_feature": f_resid if self.use_gate else None,
+        }
+        return fused_out, aux

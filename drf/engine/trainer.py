@@ -5,9 +5,9 @@ Trainer v2
   1) 训练循环使用 AMP autocast + GradScaler (混合精度)
   2) 支持梯度累积 (grad_accum_steps)
   3) 每 step 调度学习率 (warmup + cosine), 而非每 epoch
-  4) 维护 EMA 权重, 每个 epoch 用 EMA 模型在测试集上评估
+  4) 维护 EMA 权重, 每个 epoch 用 EMA 模型在验证集上评估
   5) 单 logit + BCE (不是 2-class CE), 评估时 sigmoid 输出 fake-prob
-  6) 损失日志: total / cls / con; 评估按跨域平均 AUC 选最佳
+  6) 损失日志: total / cls / con; 评估按验证集平均 AUC 选最佳
 """
 
 import os
@@ -58,7 +58,7 @@ class Trainer:
         self.cls_loss_fn = BinaryClsLoss(label_smoothing=label_smoothing).to(device)
         self.con_w = float(contrastive_weight)
         self.con_loss_fn = HardNegSupConLoss(
-            temperature=contrastive_temperature, num_hard_neg=num_hard_neg,
+            temperature=contrastive_temperature, top_k=num_hard_neg,
         ).to(device)
 
         self.ema = ModelEMA(model, decay=ema_decay).to(device) if ema_decay else None
@@ -140,8 +140,13 @@ class Trainer:
 
     # ---------------------------------------------------------- ckpt
     def _trainable_state(self, module: torch.nn.Module) -> dict:
-        """只导出可训练参数 + 所有 buffer (跳过冻结的 CLIP, 显著瘦身)。"""
-        trainable_names = {n for n, p in module.named_parameters() if p.requires_grad}
+        """只导出原模型可训练参数 + 所有 buffer。
+
+        EMA 副本会把全部参数设为 ``requires_grad=False``，因此必须从原模型
+        取得可训练参数名；否则 EMA checkpoint 会只剩 buffer，评估时会静默
+        使用随机初始化的融合层和分类头。
+        """
+        trainable_names = {n for n, p in self.model.named_parameters() if p.requires_grad}
         sd = module.state_dict()
         kept = {k: v for k, v in sd.items()
                 if (k in trainable_names) or (k not in {n for n, _ in module.named_parameters()})}
@@ -173,9 +178,23 @@ class Trainer:
         """
         from .utils import safe_load_checkpoint
         ckpt = safe_load_checkpoint(path, map_location=self.device)
-        self.model.load_state_dict(ckpt["model_state"], strict=strict)
+        missing, unexpected = self.model.load_state_dict(ckpt["model_state"], strict=strict)
+        bad_missing = [key for key in missing if not key.startswith("clip.")]
+        if bad_missing or unexpected:
+            raise RuntimeError(
+                f"checkpoint 与当前配置不兼容: missing={bad_missing[:10]}, "
+                f"unexpected={unexpected[:10]}"
+            )
         if self.ema is not None and ckpt.get("ema_state") is not None:
-            self.ema.ema.load_state_dict(ckpt["ema_state"], strict=strict)
+            ema_missing, ema_unexpected = self.ema.ema.load_state_dict(
+                ckpt["ema_state"], strict=strict
+            )
+            bad_ema_missing = [key for key in ema_missing if not key.startswith("clip.")]
+            if bad_ema_missing or ema_unexpected:
+                # 兼容修复前漏存可训练 EMA 参数的 checkpoint。续训时从已恢复
+                # 的 model_state 重建 EMA，避免随机 EMA 污染验证指标。
+                self.logger("[WARN] legacy EMA state incomplete; rebuilt from model_state")
+                self.ema.ema.load_state_dict(self.model.state_dict(), strict=True)
         if "optimizer_state" in ckpt:
             self.optimizer.load_state_dict(ckpt["optimizer_state"])
         if self.scheduler is not None and ckpt.get("scheduler_state") is not None:
@@ -193,7 +212,7 @@ class Trainer:
         return start_epoch
 
     # ---------------------------------------------------------- fit
-    def fit(self, train_loader, test_loaders, num_epochs: int, start_epoch: int = 1):
+    def fit(self, train_loader, val_loaders, num_epochs: int, start_epoch: int = 1):
         for epoch in range(start_epoch, num_epochs + 1):
             tr = self.train_epoch(train_loader, epoch)
             self.logger(
@@ -203,7 +222,7 @@ class Trainer:
 
             aucs = []
             metrics_per = {}
-            for name, loader in test_loaders.items():
+            for name, loader in val_loaders.items():
                 m = self.evaluate(loader, name=name)
                 metrics_per[name] = m
                 self.logger(

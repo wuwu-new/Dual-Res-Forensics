@@ -19,10 +19,28 @@ from albumentations.pytorch import ToTensorV2
 # CLIP 官方使用的归一化, 与预训练保持一致
 CLIP_MEAN = (0.48145466, 0.4578275,  0.40821073)
 CLIP_STD  = (0.26862954, 0.26130258, 0.27577711)
+XCEPTION_MEAN = (0.5, 0.5, 0.5)
+XCEPTION_STD = (0.5, 0.5, 0.5)
 
 
-def build_train_transforms(image_size: int = 224, augment_strength: float = 1.0):
+def _normalization(name: str):
+    profiles = {
+        "clip": (CLIP_MEAN, CLIP_STD),
+        "xception": (XCEPTION_MEAN, XCEPTION_STD),
+    }
+    try:
+        return profiles[name.lower()]
+    except KeyError as exc:
+        raise ValueError(f"未知 normalization={name!r}，可选: {sorted(profiles)}") from exc
+
+
+def build_train_transforms(
+    image_size: int = 224,
+    augment_strength: float = 1.0,
+    normalization: str = "clip",
+):
     s = float(max(0.0, min(1.0, augment_strength)))
+    mean, std = _normalization(normalization)
     return A.Compose([
         # spatial
         A.HorizontalFlip(p=0.5 * s),
@@ -51,14 +69,15 @@ def build_train_transforms(image_size: int = 224, augment_strength: float = 1.0)
         ),
         # finalize
         A.Resize(image_size, image_size),
-        A.Normalize(mean=CLIP_MEAN, std=CLIP_STD),
+        A.Normalize(mean=mean, std=std),
         ToTensorV2(),
     ])
 
 
-def build_test_transforms(image_size: int = 224):
+def build_test_transforms(image_size: int = 224, normalization: str = "clip"):
+    mean, std = _normalization(normalization)
     return A.Compose([
         A.Resize(image_size, image_size),
-        A.Normalize(mean=CLIP_MEAN, std=CLIP_STD),
+        A.Normalize(mean=mean, std=std),
         ToTensorV2(),
     ])

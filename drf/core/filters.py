@@ -79,10 +79,10 @@ class SRMResidual(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if x.dim() != 4 or x.size(1) != 3:
             raise ValueError(f"SRMResidual 期望 [B, 3, H, W]，实际 {tuple(x.shape)}")
-        # 将每个 RGB 通道复制给 3 个核：输入扩展为 9 通道后 depthwise 卷积
-        x_rep = x.repeat_interleave(3, dim=1)            # [B, 9, H, W] (R,R,R,G,G,G,B,B,B)
-        # weight 排布为 (核0,核1,核2) 重复 3 次，对齐 (R,R,R,...) 需要重排：
-        # 此处直接用 groups=9 的 depthwise，weight 已是 [9,1,5,5]
+        # 每组固定核都作用于全部 RGB 通道。输入排列为
+        # (R,G,B, R,G,B, R,G,B)，与 weight 的 (核0×RGB, 核1×RGB, 核2×RGB)
+        # 一一对应，避免把同一组核错误地重复到单个颜色通道上。
+        x_rep = x.repeat(1, 3, 1, 1)                    # [B, 9, H, W]
         out = F.conv2d(x_rep, self.weight, padding=2, groups=9)
         return out
 

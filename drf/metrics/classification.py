@@ -56,3 +56,23 @@ class MetricMeter:
 
         return {"auc": float(auc), "ap": float(ap), "eer": eer,
                 "acc": acc, "best_f1": best_f1, "best_thr": best_thr}
+
+
+def compute_video_metrics(y_true, y_score, video_ids) -> Dict[str, float]:
+    """Average frame scores per video and compute the same metric family."""
+    grouped: dict[str, dict[str, list]] = {}
+    for label, score, video_id in zip(y_true, y_score, video_ids):
+        if video_id in (None, ""):
+            continue
+        item = grouped.setdefault(str(video_id), {"labels": [], "scores": []})
+        item["labels"].append(int(label))
+        item["scores"].append(float(score))
+    meter = MetricMeter()
+    for item in grouped.values():
+        labels = np.asarray(item["labels"], dtype=int)
+        if np.any(labels != labels[0]):
+            raise ValueError("同一 video_id 内出现不同标签")
+        meter.update([labels[0]], [float(np.mean(item["scores"]))])
+    metrics = meter.compute()
+    metrics["num_videos"] = len(grouped)
+    return metrics

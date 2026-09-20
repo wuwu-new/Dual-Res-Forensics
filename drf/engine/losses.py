@@ -35,12 +35,15 @@ class HardNegSupConLoss(nn.Module):
         temperature: float = 0.3,
         top_k: int = 16,
         base_temperature: float | None = None,
+        num_hard_neg: int | None = None,
     ) -> None:
         super().__init__()
         if temperature <= 0:
             raise ValueError("temperature 必须为正数")
         self.temperature = temperature
-        self.top_k = top_k
+        # ``num_hard_neg`` 是旧配置使用的名字，保留兼容性，避免训练器和
+        # 配置文件之间出现静默的超参不一致。
+        self.top_k = int(top_k if num_hard_neg is None else num_hard_neg)
         self.base_temperature = base_temperature or temperature
 
     def forward(self, features: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
@@ -57,6 +60,8 @@ class HardNegSupConLoss(nn.Module):
             raise ValueError(f"features 期望 [B, D]，实际 {tuple(features.shape)}")
         device = features.device
         batch_size = features.size(0)
+        if batch_size < 2:
+            return features.new_zeros(())
 
         features = F.normalize(features, dim=1)
         labels = labels.contiguous().view(-1, 1)
@@ -74,7 +79,11 @@ class HardNegSupConLoss(nn.Module):
 
         # ---- 难负例挖掘：每行只保留相似度最高的 top_k 个负样本 ----
         neg_sim = sim.masked_fill(neg_mask == 0, float("-inf"))
-        k = min(self.top_k, batch_size - 1)
+        n_neg = int(neg_mask[0].sum().item())
+        k = min(max(self.top_k, 0), n_neg)
+        if k == 0:
+            # 单类别 batch 没有负例，SupCon 不提供有效梯度。
+            return features.new_zeros(())
         # 取 top_k 难负例的列索引
         _, hard_idx = neg_sim.topk(k, dim=1)
         hard_neg_mask = torch.zeros_like(sim)
@@ -95,6 +104,32 @@ class HardNegSupConLoss(nn.Module):
         mean_log_prob_pos = (pos_mask * log_prob).sum(dim=1)[valid] / pos_count[valid]
         loss = -(self.temperature / self.base_temperature) * mean_log_prob_pos
         return loss.mean()
+
+
+class BinaryClsLoss(nn.Module):
+    """带标签平滑的单 logit 二分类损失。"""
+
+    def __init__(self, label_smoothing: float = 0.05, pos_weight=None):
+        super().__init__()
+        if not 0.0 <= label_smoothing < 1.0:
+            raise ValueError("label_smoothing 必须位于 [0, 1)")
+        self.label_smoothing = float(label_smoothing)
+        self.register_buffer(
+            "pos_weight",
+            torch.as_tensor(pos_weight, dtype=torch.float32)
+            if pos_weight is not None else None,
+            persistent=False,
+        )
+
+    def forward(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        target = labels.float().view_as(logits)
+        if self.label_smoothing:
+            target = target * (1.0 - self.label_smoothing) + 0.5 * self.label_smoothing
+        return F.binary_cross_entropy_with_logits(
+            logits.view_as(target), target,
+            pos_weight=self.pos_weight.to(logits.device)
+            if self.pos_weight is not None else None,
+        )
 
 
 class BCESupConLoss(nn.Module):

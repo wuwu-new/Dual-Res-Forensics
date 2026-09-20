@@ -1,33 +1,23 @@
-# ============================================================
-# 消融实验: 关闭 Hard-Negative SupCon 辅助损失 (只剩 BCE 主损失)
-# 唯一差异: experiment.name + loss.contrastive_weight = 0
-# ============================================================
 experiment:
-  name: drf_v2_ablation_no_supcon
+  name: drf_baseline_semantic
   log_dir: ./logs
-
 backbone:
   clip_name: openai/clip-vit-large-patch14
   freeze_clip: true
-
 residual:
   c_token: 192
   token_grid: 8
-  use_srm: true
-
+  use_srm: false
 fusion:
   embed_dim: 256
   num_heads: 8
   fused_dim: 128
   dropout: 0.1
-  use_gate: true
-
+  use_gate: false
 model:
   use_boundary_head: false
   use_semantic: true
-  use_residual: true
-  proj_dim: 64
-
+  use_residual: false
 data:
   image_size: 224
   normalization: clip
@@ -41,19 +31,16 @@ data:
     cdfv2: ./data/cdfv2_test.json
     dfdc: ./data/dfdc_test.json
     wilddeepfake: ./data/wilddeepfake_test.json
-
 loss:
   label_smoothing: 0.05
-  contrastive_weight: 0.0       # ← 消融点: 完全关闭对比损失
+  contrastive_weight: 0.0
   contrastive_temperature: 0.07
   num_hard_neg: 16
-
 optim:
   lr: 0.0002
   weight_decay: 0.001
   warmup_ratio: 0.05
   min_lr_ratio: 0.01
-
 train:
   num_epochs: 8
   use_amp: true

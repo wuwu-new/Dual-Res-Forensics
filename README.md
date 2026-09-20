@@ -5,11 +5,17 @@
   <img src="https://img.shields.io/badge/Based%20on-DeepfakeBench-4A90D9" />
   <img src="https://img.shields.io/badge/CLIP-ViT--L%2F14-green" />
   <img src="https://img.shields.io/badge/Status-Active%20Development-orange" />
-  <img src="https://img.shields.io/badge/License-Apache%202.0-blue" />
+  <img src="https://img.shields.io/badge/License-MIT-blue" />
 </p>
 
 > 本项目在 **Forensics Adapter (CVPR'25)** 与 **DeepfakeBench (NeurIPS'23)** 基础上进行了独立的模块化重构与算法升级。  
 > 核心思想：冻结 CLIP 主干提取全局语义 × SRM 高频残差通道捕捉局部篡改细节 × 门控残差引导交叉注意力融合（GRCA）× Hard-Negative 监督对比辅助损失。
+
+> **论文实验入口（2026-09 修订）**：请先阅读 [RUN_EXPERIMENTS_2DAYS.md](RUN_EXPERIMENTS_2DAYS.md)。
+> 现有 `logs/` 和下方结果来自旧版 10k 帧抽样评估，只能作为冒烟参考，不能替代老师要求的完整数据集、严格消融与统一重跑结果。
+> 当前论文协议为 FF++ C23 训练/验证，CDF-v2、DFDC、WildDeepfake 跨域测试；公开主对比包含 Strict CLIP、Xception、官方 Forensics Adapter 和 Full DRF。
+
+团队协作统一从`ccf-c-experiments-20260920`分支开展，具体分支与PR规范见 [GITHUB_WORKFLOW.md](GITHUB_WORKFLOW.md)，总体进度见 [PROJECT_PROGRESS.md](PROJECT_PROGRESS.md)。
 
 ---
 
@@ -191,6 +197,46 @@ python -m tools.test \
 
 > **注意**：发布结果使用 `backbone.clip_name: openai/clip-vit-large-patch14`，首次运行会自动下载约 1.1GB 权重。
 
+### 5. 训练、数据检查和论文图
+
+```bash
+# 训练前检查索引和文件是否完整
+python -m tools.check_data data/ffpp_c23_train.json data/ffpp_c23_val.json \
+    data/cdfv2_test.json data/dfdc_test.json data/wilddeepfake_test.json \
+    --check-files --require-video-id
+python -m tools.check_split data/ffpp_c23_train.json data/ffpp_c23_val.json
+
+# Full DRF；best checkpoint 只由 FF++ validation AUC 决定
+python -m tools.train --config configs/full_drf.yaml --seed 2027
+
+# 最终测试，同时保存逐样本分数供错误分析
+python -m tools.test --config configs/full_drf.yaml \
+    --ckpt logs/drf_full/ckpt/ckpt_best.pth --prefer ema --save-predictions
+
+# 语义、残差和融合贡献图
+python -m tools.visualize_branches --config configs/full_drf.yaml \
+    --ckpt logs/drf_full/ckpt/ckpt_best.pth --prefer ema \
+    --image /path/to/sample.png --out logs/drf_full/figures/sample.png
+```
+
+### 6. Xception 与官方外部基线
+
+```bash
+# 当前仓库内的经典 Xception 基线
+python -m tools.train --config configs/baseline_xception.yaml --seed 2027
+
+# 将官方 Forensics Adapter 导出的逐样本预测统一为本项目指标
+python -m tools.evaluate_predictions \
+    --predictions external_results/forensics_adapter_predictions.csv \
+    --experiment forensics_adapter_official \
+    --expected-index cdfv2=data/cdfv2_test.json \
+    --expected-index dfdc=data/dfdc_test.json \
+    --expected-index wilddeepfake=data/wilddeepfake_test.json \
+    --out logs/forensics_adapter_official/test_result.json
+```
+
+外部方法必须使用与 DRF 完全相同的样本索引和裁脸结果。协议不同的论文原始数字只能作为参考值，不得混入公平复现主表。
+
 ---
 
 ## 🔬 技术细节
@@ -213,13 +259,13 @@ python -m tools.test \
 - **混合精度**：AMP + GradScaler
 - **EMA**：decay=0.999，评估时使用 EMA 模型
 - **损失**：BCE+LS（label_smoothing=0.05）+ Hard-Neg SupCon（weight=0.3，temperature=0.07，top-16 难负例）
-- **数据增强**：augment_strength=1.3（spatial → photo → noise → jpeg → Cutout → normalize）
+- **数据增强**：augment_strength=1.0（spatial → photo → noise → jpeg → Cutout → normalize）
 
 ---
 
 ## 📝 引用
 
-本项目以 **Apache-2.0** 许可证开源，科研思想与依赖的第三方归因详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+本项目以 **MIT** 许可证开源，科研思想与依赖的第三方归因详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ```bibtex
 @InProceedings{Cui_2025_CVPR,

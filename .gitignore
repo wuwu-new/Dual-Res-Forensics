@@ -1,0 +1,31 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# Datasets and generated indexes are stored outside Git.
+data/*_train.json
+data/*_val.json
+data/wilddeepfake_test.json
+data/**/*.jpg
+data/**/*.jpeg
+data/**/*.png
+
+# Heavy experiment artifacts are stored in shared storage.
+logs/**/ckpt/
+logs/**/metrics.log
+logs/**/run_manifest.json
+logs/**/config_snapshot.yaml
+logs/**/*_detailed.json
+external_results/
+*.pth
+*.pt
+*.ckpt
+
+# Local editor/system files.
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

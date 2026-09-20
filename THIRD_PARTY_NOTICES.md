@@ -33,6 +33,11 @@
 ## 6. scikit-learn / PyTorch / NumPy / Pillow / tqdm / PyYAML
 - 标准 BSD / MIT / Apache-2.0 许可的常见科学计算依赖, 用法均为标准 API 调用。
 
+## 7. timm Xception
+- 仓库: https://github.com/huggingface/pytorch-image-models
+- 许可: Apache-2.0（`legacy_xception` 模型配置）
+- 使用方式: 通过 `timm.create_model` 加载 ImageNet 预训练 Xception，本仓库只提供统一输出封装，不分发模型权重。
+
 ---
 
 如发现任何遗漏归因，请在 issue 中告知，我们会在下一个版本补正。

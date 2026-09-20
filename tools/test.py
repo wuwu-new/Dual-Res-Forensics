@@ -26,18 +26,41 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from drf.core import DRFModel
+from drf.core import build_model
 from drf.data import ForgeryDataset, collate_fn
 from drf.engine import pick_device, safe_load_checkpoint, set_seed
-from drf.metrics import MetricMeter
+from drf.metrics import MetricMeter, compute_video_metrics
 import torchvision.transforms.functional as TF
+
+
+def _resolve(value: str) -> Path:
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+def _load_compact_state(model, state: dict, source: str) -> None:
+    missing, unexpected = model.load_state_dict(state, strict=False)
+    # Compact checkpoints intentionally omit the frozen CLIP parameters. Every
+    # trainable DRF parameter must still be present or the result is invalid.
+    bad_missing = [key for key in missing if not key.startswith("clip.")]
+    if bad_missing or unexpected:
+        raise RuntimeError(
+            f"{source} 与当前配置不兼容: missing={bad_missing[:10]}, "
+            f"unexpected={unexpected[:10]}。请确认 checkpoint 与 config 成对使用。"
+        )
 
 
 def _build_test_loaders(cfg):
     d = cfg["data"]
     loaders = {}
     for name, jp in d["test_jsons"].items():
-        ts = ForgeryDataset(jp, image_size=d["image_size"], mode="test")
+        jp = str(_resolve(jp))
+        ts = ForgeryDataset(
+            jp,
+            image_size=d["image_size"],
+            mode="test",
+            normalization=str(d.get("normalization", "clip")),
+        )
         loaders[name] = DataLoader(
             ts, batch_size=d["batch_size"], shuffle=False,
             num_workers=d["num_workers"], collate_fn=collate_fn, pin_memory=True,
@@ -50,6 +73,7 @@ def _evaluate(model, loader, device, use_amp: bool, name: str, tta: bool = False
     model.eval()
     meter = MetricMeter()
     predictions = [] if save_predictions else None  # Store per-sample predictions
+    video_labels, video_scores, video_ids = [], [], []
 
     for batch in tqdm(loader, desc=f"Eval [{name}]"):
         images = batch["image"].to(device, non_blocking=True)
@@ -61,11 +85,17 @@ def _evaluate(model, loader, device, use_amp: bool, name: str, tta: bool = False
                 out = model(images)
             prob_fake = torch.sigmoid(out["logit"]).float().cpu().numpy()
             meter.update(labels_batch, prob_fake)
+            video_labels.extend(labels_batch.tolist())
+            video_scores.extend(prob_fake.tolist())
+            batch_video_ids = batch.get("video_id", [""] * B)
+            video_ids.extend(batch_video_ids)
             
             if save_predictions:
                 for i in range(B):
                     predictions.append({
                         "dataset": name,
+                        "image_path": batch["image_path"][i],
+                        "video_id": batch_video_ids[i],
                         "label": int(labels_batch[i]),
                         "pred_score": float(prob_fake[i])
                     })
@@ -114,16 +144,25 @@ def _evaluate(model, loader, device, use_amp: bool, name: str, tta: bool = False
 
         prob_fake = np.array(probs)
         meter.update(labels_batch, prob_fake)
+        video_labels.extend(labels_batch.tolist())
+        video_scores.extend(prob_fake.tolist())
+        batch_video_ids = batch.get("video_id", [""] * B)
+        video_ids.extend(batch_video_ids)
         
         if save_predictions:
             for i in range(B):
                 predictions.append({
                     "dataset": name,
+                    "image_path": batch["image_path"][i],
+                    "video_id": batch_video_ids[i],
                     "label": int(labels_batch[i]),
                     "pred_score": float(prob_fake[i])
                 })
 
     metrics = meter.compute()
+    metrics["num_frames"] = len(video_labels)
+    if any(video_ids):
+        metrics["video"] = compute_video_metrics(video_labels, video_scores, video_ids)
     if save_predictions:
         metrics["_predictions"] = predictions
     return metrics
@@ -143,30 +182,18 @@ def main():
     args = ap.parse_args()
 
     set_seed(args.seed)
-    with open(args.config, "r", encoding="utf-8") as f:
+    config_path = _resolve(args.config)
+    with open(config_path, "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
 
     device = pick_device()
-    b = cfg["backbone"]; r = cfg["residual"]; fu = cfg["fusion"]
-    model = DRFModel(
-        clip_name=b["clip_name"],
-        c_token=r["c_token"], token_grid=r["token_grid"],
-        fused_dim=fu["fused_dim"], fusion_embed_dim=fu["embed_dim"],
-        fusion_num_heads=fu["num_heads"], dropout=fu.get("dropout", 0.1),
-        use_boundary_head=cfg["model"].get("use_boundary_head", False),
-        freeze_clip=b.get("freeze_clip", True),
-        use_srm=r.get("use_srm", True),
-        use_gate=fu.get("use_gate", True),
-        use_freq=r.get("use_freq", False),
-        freq_c_token=r.get("freq_c_token", r["c_token"]),
-        freq_token_grid=r.get("freq_token_grid", r["token_grid"]),
-    ).to(device)
+    model = build_model(cfg).to(device)
 
-    ckpt = safe_load_checkpoint(args.ckpt, map_location=device)
+    ckpt_path = _resolve(args.ckpt)
+    ckpt = safe_load_checkpoint(str(ckpt_path), map_location=device)
     state_key = "ema_state" if (args.prefer == "ema" and ckpt.get("ema_state")) else "model_state"
-    missing, unexpected = model.load_state_dict(ckpt[state_key], strict=False)
-    print(f"[Load] {state_key} from {args.ckpt}  "
-          f"(missing={len(missing)}, unexpected={len(unexpected)})")
+    _load_compact_state(model, ckpt[state_key], f"{ckpt_path}:{state_key}")
+    print(f"[Load] {state_key} from {ckpt_path}")
 
     use_amp = cfg["train"].get("use_amp", True)
     loaders = _build_test_loaders(cfg)
@@ -198,13 +225,16 @@ def main():
     print(f"{'Average AUC':<14}{avg_auc:>8.4f}")
     print("=" * 72)
 
-    out_path = args.out or os.path.join(
+    out_path = _resolve(args.out) if args.out else _resolve(os.path.join(
         cfg["experiment"]["log_dir"], cfg["experiment"]["name"], "test_result.json"
-    )
+    ))
+    out_path = str(out_path)
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump({"avg_auc": avg_auc, "per_dataset": results,
-                   "ckpt": args.ckpt, "loaded_from": state_key}, f, indent=2)
+                   "experiment": cfg["experiment"]["name"],
+                   "ckpt": str(ckpt_path), "config": str(config_path),
+                   "loaded_from": state_key}, f, indent=2)
     print(f"\n[Saved] {out_path}")
     
     # Save per-sample predictions if requested
