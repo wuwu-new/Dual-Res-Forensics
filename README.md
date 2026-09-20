@@ -15,7 +15,7 @@
 > 现有 `logs/` 和下方结果来自旧版 10k 帧抽样评估，只能作为冒烟参考，不能替代老师要求的完整数据集、严格消融与统一重跑结果。
 > 当前论文协议为 FF++ C23 训练/验证，CDF-v2、DFDC、WildDeepfake 跨域测试；公开主对比包含 Strict CLIP、Xception、官方 Forensics Adapter 和 Full DRF。
 
-团队协作统一从`ccf-c-experiments-20260920`分支开展，具体分支与PR规范见 [GITHUB_WORKFLOW.md](GITHUB_WORKFLOW.md)，总体进度见 [PROJECT_PROGRESS.md](PROJECT_PROGRESS.md)。
+团队协作统一从`ccf-c-experiments-20260920`分支开展，个人分支、提交内容和合并操作统一写在 [RUN_EXPERIMENTS_2DAYS.md](RUN_EXPERIMENTS_2DAYS.md) 中。
 
 ---
 

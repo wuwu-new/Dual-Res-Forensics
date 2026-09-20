@@ -122,13 +122,23 @@ python -m tools.build_data_manifest data/ffpp_c23_train.json data/ffpp_c23_val.j
 | 李婉铃 | 林雨泓 | No residual/No SRM是否严格控制变量、索引统计 |
 | 李佳乐 | 李婉铃 | No gate/No SupCon配置、外部预测覆盖是否完整 |
 
-检查人必须在共享记录中写“通过”或明确问题，不能只口头确认。任何公共超参变化都要同步六份核心配置，并更换实验名重新运行，禁止覆盖旧结果。
+检查人必须在Pull Request评论中写“通过”或明确问题，不能只口头确认。任何公共超参变化都要同步六份核心配置，并更换实验名重新运行，禁止覆盖旧结果。
 
 ### 3.5 每名成员的GitHub提交操作
 
 统一集成分支为`ccf-c-experiments-20260920`。三人不得直接向`main`或集成分支提交，必须从集成分支创建自己的功能分支，并通过Pull Request合并回集成分支。
 
-林雨泓使用`exp/lin-full-clip`：
+#### 林雨泓：`exp/lin-full-clip`
+
+需要加入个人分支的内容：
+
+- Full DRF和Strict CLIP涉及的代码修复及配置：`configs/full_drf.yaml`、`configs/baseline_semantic.yaml`。
+- FF++划分/检查工具的必要修复；不提交FF++原始数据和含本机绝对路径的索引。
+- 两种方法的轻量最终指标：`results/lin/full_drf.json`、`results/lin/baseline_semantic.json`。
+- 选定的论文可视化：`results/lin/figures/`，只放最终图，不放所有中间图。
+- 汇总表或说明：`results/lin/README.md`，简述seed、best epoch、验证AUC、三测试集frame/video AUC及共享存储链接。
+
+首次创建分支：
 
 ```bash
 git fetch origin
@@ -136,16 +146,36 @@ git switch ccf-c-experiments-20260920
 git pull --ff-only origin ccf-c-experiments-20260920
 git switch -c exp/lin-full-clip
 
-# 更新代码、配置和个人记录后
-git add configs/full_drf.yaml configs/baseline_semantic.yaml \
-  experiment_records/lin-yuhong.md PROJECT_PROGRESS.md
-git commit -m "exp(lin): update full DRF and CLIP baseline progress"
+# 完成一个可验证阶段后，只添加本次相关文件
+git add configs/full_drf.yaml configs/baseline_semantic.yaml results/lin/
+git commit -m "result(lin): add full DRF and CLIP baseline results"
 git push -u origin exp/lin-full-clip
 ```
 
-在GitHub创建PR：`exp/lin-full-clip` → `ccf-c-experiments-20260920`，指定李佳乐审核。后续继续在同一分支提交并push，PR会自动更新。
+后续继续提交：
 
-李婉铃使用`exp/wan-residual-srm`：
+```bash
+git switch exp/lin-full-clip
+git pull --rebase origin exp/lin-full-clip
+git add <本次实际修改的文件>
+git commit -m "fix(lin): <具体修改>"
+git push origin exp/lin-full-clip
+```
+
+完成后创建PR：`exp/lin-full-clip` → `ccf-c-experiments-20260920`，由李佳乐审核。
+
+#### 李婉铃：`exp/wan-residual-srm`
+
+需要加入个人分支的内容：
+
+- No residual和No SRM配置/必要代码修复：`configs/ablation_no_residual.yaml`、`configs/ablation_no_srm.yaml`。
+- CDF-v2、WildDeepfake数据索引生成工具的必要修改；不提交数据、帧或含绝对路径的大索引。
+- 两项消融的轻量最终指标：`results/wan/no_residual.json`、`results/wan/no_srm.json`。
+- 残差/SRM对比表或图：`results/wan/figures/`。
+- 结果摘要：`results/wan/README.md`。
+- 核心六组结束后，如果完成Xception，再加入`configs/baseline_xception.yaml`与`results/wan/xception.json`。
+
+首次创建分支：
 
 ```bash
 git fetch origin
@@ -153,15 +183,25 @@ git switch ccf-c-experiments-20260920
 git pull --ff-only origin ccf-c-experiments-20260920
 git switch -c exp/wan-residual-srm
 
-git add configs/ablation_no_residual.yaml configs/ablation_no_srm.yaml \
-  configs/baseline_xception.yaml experiment_records/li-wanling.md
-git commit -m "exp(wan): update residual and SRM ablation progress"
+git add configs/ablation_no_residual.yaml configs/ablation_no_srm.yaml results/wan/
+git commit -m "result(wan): add residual and SRM ablation results"
 git push -u origin exp/wan-residual-srm
 ```
 
-在GitHub创建PR：`exp/wan-residual-srm` → `ccf-c-experiments-20260920`，指定林雨泓审核。
+完成后创建PR：`exp/wan-residual-srm` → `ccf-c-experiments-20260920`，由林雨泓审核。
 
-李佳乐使用`exp/jia-gate-supcon`：
+#### 李佳乐：`exp/jia-gate-supcon`
+
+需要加入个人分支的内容：
+
+- No gate和No SupCon配置/必要代码修复：`configs/ablation_no_gate.yaml`、`configs/ablation_no_supcon.yaml`。
+- DFDC索引工具、数据清单或统一汇总工具的必要修改。
+- 两项消融的轻量最终指标：`results/jia/no_gate.json`、`results/jia/no_supcon.json`。
+- 完整消融汇总表：`results/jia/ablation_summary.md`。
+- 结果摘要：`results/jia/README.md`。
+- 核心六组结束后，如果完成Forensics Adapter，再加入统一指标文件`results/jia/forensics_adapter.json`；不提交逐样本预测。
+
+首次创建分支：
 
 ```bash
 git fetch origin
@@ -169,21 +209,30 @@ git switch ccf-c-experiments-20260920
 git pull --ff-only origin ccf-c-experiments-20260920
 git switch -c exp/jia-gate-supcon
 
-git add configs/ablation_no_gate.yaml configs/ablation_no_supcon.yaml \
-  experiment_records/li-jiale.md
-git commit -m "exp(jia): update gate and SupCon ablation progress"
+git add configs/ablation_no_gate.yaml configs/ablation_no_supcon.yaml results/jia/
+git commit -m "result(jia): add gate and SupCon ablation results"
 git push -u origin exp/jia-gate-supcon
 ```
 
-在GitHub创建PR：`exp/jia-gate-supcon` → `ccf-c-experiments-20260920`，指定李婉铃审核。
+完成后创建PR：`exp/jia-gate-supcon` → `ccf-c-experiments-20260920`，由李婉铃审核。
 
-每人至少提交三个节点：`setup`（环境与数据校验）、`train`（训练完成和best validation）、`result`（三测试集结果）。建议提交信息格式：
+#### 三人共同的提交规则
+
+开始新的工作前，先把集成分支的最新修改同步到个人分支：
+
+```bash
+git fetch origin
+git switch <自己的个人分支>
+git merge --no-edit origin/ccf-c-experiments-20260920
+git push origin <自己的个人分支>
+```
+
+提交信息格式：
 
 ```text
-chore(name): record environment and data manifest
-exp(name): finish <method> training
 result(name): add <method> cross-dataset metrics
 fix(name): correct <specific problem>
+docs(name): update <specific table or explanation>
 ```
 
 提交前统一执行：
@@ -194,9 +243,9 @@ python -m compileall -q drf tools
 git diff --check
 ```
 
-禁止提交原始数据、人脸帧、`*.pth`、逐样本预测、完整训练日志和个人密钥。这些文件上传到共享存储，在个人实验记录中填写链接、SHA256和访问说明。轻量的汇总指标可以放入`experiment_records/results/`。
+禁止提交原始数据、人脸帧、`*.pth`、逐样本预测、完整训练日志、含本机绝对路径的大索引和个人密钥。上述大文件放共享存储，GitHub只加入轻量结果JSON、最终图表和README中的共享链接。
 
-PR审核通过后使用Squash and merge；林雨泓每天结束时把已合并PR状态同步到`PROJECT_PROGRESS.md`。只有核心实验、公开基线、复现材料全部验收后，才由林雨泓从集成分支向`main`发起最终PR。
+PR审核通过后使用Squash and merge。三人的PR全部合并且核心表格验收完成后，才由林雨泓从`ccf-c-experiments-20260920`向`main`发起最终PR。
 
 ## 4. 单GPU执行顺序
 
