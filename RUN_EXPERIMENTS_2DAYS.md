@@ -297,6 +297,19 @@ Celeb-DF v2工具会把官方测试清单的`1=real, 0=fake`转换为项目统�
 `0=real, 1=fake`。DFDC工具读取`metadata.json`中的`is_fake`，并报告未成功提取
 人脸帧的视频；这些视频不能用空样本替代。
 
+向Colab或服务器传输时，不要上传数十万个散文件。按索引制作无压缩tar包，PNG/JPEG
+本身已压缩，无压缩打包速度更快，也不会改变数据：
+
+```bash
+python -m tools.package_indexed_data \
+  --root /data/FaceForensics++ \
+  --index /data/FaceForensics++/ffpp_c23_train.json \
+  --index /data/FaceForensics++/ffpp_c23_val.json \
+  --output /transfer/ffpp_train_val.tar
+```
+
+解包后索引仍位于数据根目录，索引中的相对图片路径无需改写。
+
 CDF-v2和DFDC使用同一命令，分别指定真实/伪造帧根目录。生成后强制检查：
 
 ```bash
