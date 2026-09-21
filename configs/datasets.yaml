@@ -1,0 +1,133 @@
+version: 1
+protocol:
+  frames_per_video: 32
+  train_dataset: ffpp_c23
+  validation_dataset: ffpp_c23
+  cross_domain_tests:
+    - celeb_df_v2
+    - dfdc
+    - wilddeepfake
+
+datasets:
+  ffpp_c23:
+    name: FaceForensics++ C23
+    tier: required
+    role: train_validation_and_in_domain_test
+    directory: FaceForensics++
+    access: application_required
+    official_urls:
+      - https://github.com/ondyari/FaceForensics
+      - https://docs.google.com/forms/d/e/1FAIpQLSdRRR3L5zAv6tQ_CKxmK4W96tAab_pfBu2EKAgQbeDVhmXagg/viewform
+    contents: original, Deepfakes, Face2Face, FaceSwap, NeuralTextures; c23 only
+    markers:
+      - original_sequences
+      - manipulated_sequences
+
+  celeb_df_v2:
+    name: Celeb-DF v2
+    tier: required
+    role: cross_domain_test
+    directory: Celeb-DF-v2
+    access: application_required
+    official_urls:
+      - https://github.com/yuezunli/celeb-deepfakeforensics
+      - https://forms.gle/2jYBby6y1FBU3u6q9
+      - https://wj.qq.com/s2/8540155/b5d9/
+    contents: official List_of_testing_videos.txt test list
+    markers:
+      - Celeb-real
+      - Celeb-synthesis
+      - List_of_testing_videos.txt
+
+  dfdc:
+    name: Deepfake Detection Challenge (full DFDC)
+    tier: required
+    role: cross_domain_test
+    directory: DFDC
+    access: kaggle_rules_required
+    official_urls:
+      - https://www.kaggle.com/competitions/deepfake-detection-challenge/data
+      - https://github.com/SCLBD/DeepfakeBench
+    contents: DeepfakeBench standardized full-DFDC test data; not DFDC Preview
+    markers: []
+
+  wilddeepfake:
+    name: WildDeepfake
+    tier: required
+    role: cross_domain_test
+    directory: WildDeepfake
+    access: agreement_required
+    official_urls:
+      - https://github.com/deepfakeinthewild/deepfake-in-the-wild
+      - https://forms.gle/o8vy9Q8fQ5mQZ4Qk6
+      - https://huggingface.co/datasets/xingjunm/WildDeepfake
+    contents: official real/fake test face sequences
+    markers: []
+
+  ffpp_c40:
+    name: FaceForensics++ C40
+    tier: optional
+    role: compression_robustness
+    directory: FaceForensics++-C40
+    access: application_required
+    official_urls:
+      - https://github.com/ondyari/FaceForensics
+    contents: original and four manipulations; c40 only
+    markers: []
+
+  faceshifter:
+    name: FaceShifter
+    tier: optional
+    role: unseen_manipulation_test
+    directory: FaceShifter
+    access: application_required
+    official_urls:
+      - https://github.com/ondyari/FaceForensics/tree/master/dataset/FaceShifter
+    contents: c23 test data
+    markers: []
+
+  deepfake_detection:
+    name: Google DeepFakeDetection
+    tier: optional
+    role: unseen_manipulation_test
+    directory: DeepFakeDetection
+    access: provider_terms_required
+    official_urls:
+      - https://github.com/ondyari/FaceForensics/tree/master/dataset
+      - https://ai.googleblog.com/2019/09/contributing-data-to-deepfake-detection.html
+    contents: original and manipulated test data
+    markers: []
+
+  deeperforensics:
+    name: DeeperForensics-1.0
+    tier: optional
+    role: perturbation_robustness_test
+    directory: DeeperForensics-1.0
+    access: provider_terms_required
+    official_urls:
+      - https://github.com/EndlessSora/DeeperForensics-1.0/tree/master/dataset
+    contents: official test data and perturbation levels
+    markers: []
+
+  df40:
+    name: DF40
+    tier: optional
+    role: modern_manipulation_extension
+    directory: DF40
+    access: provider_terms_required
+    official_urls:
+      - https://github.com/YZY-stack/DF40
+    contents: selected official test splits; protocol must be reported
+    markers: []
+
+  uadfv:
+    name: UADFV
+    tier: optional
+    role: legacy_cross_domain_test
+    directory: UADFV
+    access: application_required
+    official_urls:
+      - https://docs.google.com/forms/d/e/1FAIpQLScKPoOv15TIZ9Mn0nGScIVgKRM9tFWOmjh9eHKx57Yp-XcnxA/viewform
+    contents: complete official dataset
+    markers: []
+

@@ -11,6 +11,15 @@
 
 两天核心实验不需要额外下载 FaceShifter、DeepFakeDetection、UADFV、DF40、FF++ C40 或 FF++ raw/c0。Xception 和 Forensics Adapter 必须使用上表相同的样本，不为基线单独准备另一份测试集。
 
+完整的机器可读注册表位于 `configs/datasets.yaml`。其中把 FF++ C40、FaceShifter、DeepFakeDetection、DeeperForensics-1.0、DF40 和 UADFV 标为投稿增强项；它们不应挤占四个必需数据集和核心消融的时间。
+
+团队成员可用统一命令查看清单和官方入口：
+
+```bash
+python -m tools.dataset_manager list --include-optional
+python -m tools.dataset_manager sources
+```
+
 ## 2. 推荐的最快获取路线
 
 1. 三名成员先分别接受各数据集原始提供方的条款。申请表必须填写真实姓名、学校、学术邮箱和研究用途。
@@ -65,3 +74,14 @@
 6. GitHub PR 只提交脚本、轻量清单和统计结果，目标分支为 `ccf-c-experiments-20260920`。
 
 若成员使用同一台服务器，可共享只读数据目录，但每人仍使用自己的 Git 分支和实验输出目录。
+
+## 6. 本地目录初始化与检查
+
+以下命令只创建空目录，不会也不能绕过许可自动下载受限数据：
+
+```bash
+python -m tools.dataset_manager scaffold --root /path/to/private/datasets
+python -m tools.dataset_manager doctor --root /path/to/private/datasets
+```
+
+数据由官方渠道下载到这些私有目录后，再运行 `doctor` 检查四个必需数据集是否存在。`doctor` 只检查目录和关键标志文件；正式训练前仍必须运行帧级 `tools.check_data` 和划分级 `tools.check_split`。
