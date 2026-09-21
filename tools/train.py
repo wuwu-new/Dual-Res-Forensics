@@ -41,14 +41,6 @@ def _loader(json_path: str, data_cfg: dict, mode: str, shuffle: bool) -> DataLoa
         augment_strength=float(data_cfg.get("augment_strength", 1.0)),
         normalization=str(data_cfg.get("normalization", "clip")),
     )
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
-
-
-def _save_json(path: Path, payload: dict) -> None:
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return DataLoader(
         ds,
         batch_size=int(data_cfg["batch_size"]),
@@ -59,6 +51,14 @@ def _save_json(path: Path, payload: dict) -> None:
         collate_fn=collate_fn,
         drop_last=(mode == "train"),
     )
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
+def _save_json(path: Path, payload: dict) -> None:
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def main() -> None:
