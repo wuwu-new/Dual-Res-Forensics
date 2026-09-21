@@ -273,11 +273,21 @@ python -m tools.build_ffpp_index \
 python -m tools.build_dataset_index --dataset wilddeepfake \
   --real-root /data/WildDeepfake/real --fake-root /data/WildDeepfake/fake \
   --output data/wilddeepfake_test.json
+
+python -m tools.build_eval_index celebdf-v2 \
+  --root /data/Celeb-DF-v2 --output /data/Celeb-DF-v2/cdfv2_test.json --strict
+
+python -m tools.build_eval_index dfdc \
+  --root /data/DFDC/test --output /data/DFDC/test/dfdc_test.json
 ```
 
 FF++专用工具读取官方`train.json`、`val.json`和`test.json`，同时加入四种伪造方法，
 并检查三个集合的源视频ID零交集。默认报告但跳过官方发布包中不存在的目录；只有在使用
 自行补齐的完整副本时才增加`--strict`。索引与数据集根目录一起迁移到服务器可保持相对路径有效。
+
+Celeb-DF v2工具会把官方测试清单的`1=real, 0=fake`转换为项目统一的
+`0=real, 1=fake`。DFDC工具读取`metadata.json`中的`is_fake`，并报告未成功提取
+人脸帧的视频；这些视频不能用空样本替代。
 
 CDF-v2和DFDC使用同一命令，分别指定真实/伪造帧根目录。生成后强制检查：
 
