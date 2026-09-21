@@ -24,6 +24,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from drf.core import build_model
+from drf.config_overrides import apply_data_path_overrides, parse_named_paths
 from drf.data import ForgeryDataset, collate_fn
 from drf.engine import Trainer, build_optimizer_and_scheduler, pick_device, set_seed
 
@@ -66,11 +67,24 @@ def main() -> None:
     ap.add_argument("--config", required=True)
     ap.add_argument("--seed", type=int, default=2027)
     ap.add_argument("--resume", default=None)
+    ap.add_argument("--train-json", default=None, help="Override data.train_json")
+    ap.add_argument(
+        "--val-json",
+        action="append",
+        default=None,
+        metavar="NAME=PATH",
+        help="Replace data.val_jsons; repeat once per validation dataset",
+    )
     args = ap.parse_args()
 
     set_seed(args.seed, deterministic=True)
     with open(_path(args.config), "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
+    apply_data_path_overrides(
+        cfg,
+        train_json=args.train_json,
+        val_jsons=parse_named_paths(args.val_json, "--val-json"),
+    )
     if not cfg["data"].get("val_jsons"):
         raise ValueError("配置必须提供 data.val_jsons，不能使用测试集选择 best checkpoint")
 

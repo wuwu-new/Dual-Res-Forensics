@@ -27,6 +27,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from drf.core import build_model
+from drf.config_overrides import apply_data_path_overrides, parse_named_paths
 from drf.data import ForgeryDataset, collate_fn
 from drf.engine import pick_device, safe_load_checkpoint, set_seed
 from drf.metrics import MetricMeter, compute_video_metrics
@@ -179,12 +180,23 @@ def main():
     ap.add_argument("--out", default=None, help="JSON 结果输出路径 (默认 logs/<name>/test_result.json)")
     ap.add_argument("--save-predictions", action="store_true", 
                     help="Save per-sample predictions for visualization")
+    ap.add_argument(
+        "--test-json",
+        action="append",
+        default=None,
+        metavar="NAME=PATH",
+        help="Replace data.test_jsons; repeat once per test dataset",
+    )
     args = ap.parse_args()
 
     set_seed(args.seed)
     config_path = _resolve(args.config)
     with open(config_path, "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
+    apply_data_path_overrides(
+        cfg,
+        test_jsons=parse_named_paths(args.test_json, "--test-json"),
+    )
 
     device = pick_device()
     model = build_model(cfg).to(device)

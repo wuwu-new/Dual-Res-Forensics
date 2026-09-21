@@ -51,6 +51,14 @@ python -m tools.train --config configs/full_drf.yaml --seed 2027
 python -m tools.train --config configs/baseline_semantic.yaml --seed 2027
 ```
 
+在Colab或服务器上无需修改YAML，可直接覆盖索引路径：
+
+```bash
+python -m tools.train --config configs/full_drf.yaml --seed 2027 \
+  --train-json /data/FaceForensics++/ffpp_c23_train.json \
+  --val-json ffpp_val=/data/FaceForensics++/ffpp_c23_val.json
+```
+
 对应输出目录：`logs/drf_full/`、`logs/drf_baseline_semantic/`。
 
 具体责任：
@@ -314,6 +322,16 @@ python -m tools.train --config configs/baseline_semantic.yaml --seed 2027
 ```bash
 python -m tools.test --config configs/full_drf.yaml \
   --ckpt logs/drf_full/ckpt/ckpt_best.pth --prefer ema --save-predictions
+```
+
+跨域测试索引同样通过命令行覆盖，避免提交本机路径：
+
+```bash
+python -m tools.test --config configs/full_drf.yaml \
+  --ckpt logs/drf_full/ckpt/ckpt_best.pth --prefer ema \
+  --test-json cdfv2=/data/Celeb-DF-v2/cdfv2_test.json \
+  --test-json dfdc=/data/DFDC/test/dfdc_test.json \
+  --test-json wilddeepfake=/data/WildDeepfake/wilddeepfake_test.json
 ```
 
 六组核心实验的测试对应关系如下，负责人逐项替换上面命令中的配置和checkpoint：
