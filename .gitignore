@@ -6,12 +6,27 @@ __pycache__/
 venv/
 
 # Datasets and generated indexes are stored outside Git.
+datasets/
+data/raw/
+data/processed/
+data/generated/
 data/*_train.json
 data/*_val.json
 data/wilddeepfake_test.json
 data/**/*.jpg
 data/**/*.jpeg
 data/**/*.png
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+download-FaceForensics.py
+kaggle.json
+.env
 
 # Heavy experiment artifacts are stored in shared storage.
 logs/**/ckpt/

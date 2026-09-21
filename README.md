@@ -12,6 +12,7 @@
 > 核心思想：冻结 CLIP 主干提取全局语义 × SRM 高频残差通道捕捉局部篡改细节 × 门控残差引导交叉注意力融合（GRCA）× Hard-Negative 监督对比辅助损失。
 
 > **论文实验入口（2026-09 修订）**：请先阅读 [RUN_EXPERIMENTS_2DAYS.md](RUN_EXPERIMENTS_2DAYS.md)。
+> 数据申请、版本、统一预处理和团队共享规则见 [DATASETS.md](DATASETS.md)。原始数据不得提交到 GitHub。
 > 现有 `logs/` 和下方结果来自旧版 10k 帧抽样评估，只能作为冒烟参考，不能替代老师要求的完整数据集、严格消融与统一重跑结果。
 > 当前论文协议为 FF++ C23 训练/验证，CDF-v2、DFDC、WildDeepfake 跨域测试；公开主对比包含 Strict CLIP、Xception、官方 Forensics Adapter 和 Full DRF。
 
