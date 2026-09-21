@@ -266,10 +266,18 @@ PR审核通过后使用Squash and merge。三人的PR全部合并且核心表格
 08:30–10:30完成索引。通用索引工具假定每个视频的帧位于独立子目录：
 
 ```bash
+python -m tools.build_ffpp_index \
+  --root /data/FaceForensics++ \
+  --output-dir /data/FaceForensics++
+
 python -m tools.build_dataset_index --dataset wilddeepfake \
   --real-root /data/WildDeepfake/real --fake-root /data/WildDeepfake/fake \
   --output data/wilddeepfake_test.json
 ```
+
+FF++专用工具读取官方`train.json`、`val.json`和`test.json`，同时加入四种伪造方法，
+并检查三个集合的源视频ID零交集。默认报告但跳过官方发布包中不存在的目录；只有在使用
+自行补齐的完整副本时才增加`--strict`。索引与数据集根目录一起迁移到服务器可保持相对路径有效。
 
 CDF-v2和DFDC使用同一命令，分别指定真实/伪造帧根目录。生成后强制检查：
 
