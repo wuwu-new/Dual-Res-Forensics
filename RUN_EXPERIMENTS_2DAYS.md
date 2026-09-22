@@ -310,6 +310,15 @@ python -m tools.package_indexed_data \
 
 解包后索引仍位于数据根目录，索引中的相对图片路径无需改写。
 
+网络受限时可先制作保留全部视频的应急小索引，用于冒烟测试或明确标注的预实验：
+
+```bash
+python -m tools.subsample_index --input /data/FaceForensics++/ffpp_c23_train.json \
+  --output /data/FaceForensics++/ffpp_c23_train_8f.json --frames-per-video 8
+```
+
+该结果改变了既定的每视频32帧协议，不能冒充完整正式实验；正式论文结果仍须用完整索引复跑。
+
 CDF-v2和DFDC使用同一命令，分别指定真实/伪造帧根目录。生成后强制检查：
 
 ```bash
